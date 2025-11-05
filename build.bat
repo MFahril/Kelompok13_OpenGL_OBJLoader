@@ -23,9 +23,23 @@ if %ERRORLEVEL% EQU 0 (
     echo Usage:
     echo   ObjViewer.exe Models\yourmodel.obj
     echo.
-    echo Running with test model...
+    echo Examples of valid paths:
+    echo   Models\yourmodel.obj                          (relative path)
+    echo   Models\VendingMechine.obj                     (relative path)
+    echo   C:\MyModels\object.obj                        (absolute path)
+    echo   D:\Projects\3D Models\character.obj           (absolute path with spaces)
+    echo   ..\OtherFolder\model.obj                      (parent directory)
     echo.
-    ObjViewer.exe Models\test_cube.obj
+    set /p OBJ_PATH="Enter the path to your OBJ file (or press Enter for default test model): "
+    echo.
+    
+    if "%OBJ_PATH%"=="" (
+        echo Loading default test model...
+        ObjViewer.exe Models\test_cube.obj
+    ) else (
+        echo Loading: %OBJ_PATH%
+        ObjViewer.exe "%OBJ_PATH%"
+    )
 ) else (
     echo.
     echo ===================================
