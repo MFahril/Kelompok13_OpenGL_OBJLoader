@@ -2,3 +2,6 @@
 # All files will be tracked by Git
 
 # To re-enable ignoring, uncomment the patterns you need
+
+# Ignore mingw folder
+mingw64/
