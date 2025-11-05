@@ -2,6 +2,7 @@
 #include <iostream>
 #include <chrono>
 #include <cstdlib>
+#include <algorithm> // For std::min/max
 #include "ObjLoader.h"
 #include "AnimationLoader.h"
 
@@ -21,7 +22,22 @@ bool enableLighting = true;
 bool showAxis = false;
 
 // Posisi LIGHT3 (Point Light) global
-GLfloat light3_Position[] = { 1.5f, 1.0f, 2.0f, 1.0f };
+GLfloat light3_Position[] = { -0.5f, -0.2f, -0.2f, 1.0f };
+// Posisi LIGHT5 (Point Light 2) global
+GLfloat light5_Position[] = { 0.1f, 0.5f, -0.8f, 1.0f }; // Posisi default baru
+
+// Variabel Global untuk Spotlight (LIGHT4)
+GLfloat spotLightPosition[] = { 0.0f, 8.0f, 0.0f, 1.0f }; // Posisi di atas (y=8)
+GLfloat spotLightDirection[] = { 0.0f, -1.0f, 0.0f };   // Arah lurus ke bawah (y=-1)
+GLfloat spotLightColor[] = { 1.0f, 1.0f, 0.9f };         // Warna dasar (putih kekuningan)
+float spotLightIntensity = 2.8f;                      // Intensitas awal (280%)
+
+// --- Variabel BARU untuk Kontrol Lighting Real-time ---
+float globalAmbientLevel = 0.05f; // Diambil dari lightAndMaterial2.cpp
+float spotLightAngle = 5.0f;      // Diambil dari spotlight.cpp
+float spotLightExponent = 30.0f;  // Diambil dari spotlight.cpp
+
+// Variabel showLightMarker DIHAPUS
 
 // Time tracking for animation
 auto lastTime = std::chrono::high_resolution_clock::now();
@@ -30,29 +46,27 @@ auto lastTime = std::chrono::high_resolution_clock::now();
 void display();
 void reshape(int w, int h);
 void keyboard(unsigned char key, int x, int y);
+void specialKeyboard(int key, int x, int y);
 void mouse(int button, int state, int x, int y);
 void motion(int x, int y);
 void initLighting();
 
 int main(int argc, char** argv) {
-    // Initialize GLUT
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
     glutInitWindowSize(800, 600);
     glutInitWindowPosition(100, 100);
-    glutCreateWindow("OBJ Model Viewer - Blinn-Phong (Legacy)"); // Judul diubah
+    glutCreateWindow("OBJ Model Viewer - Cinematic Lighting (Interactive)");
 
-    // Set callback functions
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
     glutKeyboardFunc(keyboard);
     glutMouseFunc(mouse);
     glutMotionFunc(motion);
+    glutSpecialFunc(specialKeyboard);
 
-    // Enable depth testing
     glEnable(GL_DEPTH_TEST);
 
-    // Initialize lighting
     initLighting();
 
     // Parse command line arguments
@@ -60,7 +74,7 @@ int main(int argc, char** argv) {
         std::cerr << "Error: No OBJ file specified!" << std::endl;
         std::cerr << "Usage: " << argv[0] << " <objfile> [-a startFrame endFrame fps]" << std::endl;
         std::cerr << "Example: " << argv[0] << " Models/cube.obj" << std::endl;
-        std::cerr << "Example: " << argv[0] << " Models/Anim/Allanim -a 0 20 24" << std::endl;
+        std::cerr << "Example: " << argv[0] << " Models/Anim/Allanim -a 0 60 30" << std::endl;
         return 1;
     }
 
@@ -113,31 +127,43 @@ int main(int argc, char** argv) {
         }
     }
 
-    // ... (Sisa kode Controls tidak berubah, masih sama) ...
-    std::cout << "\n=== Controls ===" << std::endl;
+    // --- Tampilan Kontrol Diperbarui ---
+    std::cout << "\n=== View Controls ===" << std::endl;
     std::cout << "Mouse drag: Rotate model" << std::endl;
     std::cout << "W/S: Zoom in/out" << std::endl;
     std::cout << "L: Toggle lighting" << std::endl;
     std::cout << "F: Toggle wireframe" << std::endl;
     std::cout << "R: Reset view" << std::endl;
+    std::cout << "A: Toggle axis" << std::endl;
+    // Baris untuk tombol 'B' DIHAPUS
     if (useAnimation) {
         std::cout << "SPACE: Play/Pause animation" << std::endl;
         std::cout << "P: Play animation" << std::endl;
         std::cout << "O: Stop animation" << std::endl;
-        std::cout << "+/-: Increase/Decrease FPS" << std::endl;
+        std::cout << "]/[: Increase/Decrease FPS" << std::endl;
     }
-    std::cout << "--- Point Light Controls ---" << std::endl;
+    std::cout << "\n=== Lighting Controls ===" << std::endl;
+    std::cout << "M/m: Increase/Decrease Global Ambient" << std::endl;
+    std::cout << "--- Point Light 1 (GL_LIGHT3) ---" << std::endl;
     std::cout << "Numpad 4/6: Move Light X (Left/Right)" << std::endl;
     std::cout << "Numpad 8/2: Move Light Y (Up/Down)" << std::endl;
     std::cout << "Numpad 7/9: Move Light Z (Fwd/Back)" << std::endl;
-    std::cout << "ESC: Exit" << std::endl;
+    std::cout << "--- Point Light 2 (GL_LIGHT5) ---" << std::endl;
+    std::cout << "Arrow Left/Right: Move Light X" << std::endl;
+    std::cout << "Arrow Up/Down: Move Light Y" << std::endl;
+    std::cout << "Home/End: Move Light Z" << std::endl;
+    std::cout << "--- Spotlight (GL_LIGHT4) ---" << std::endl;
+    std::cout << "+/-: Increase/Decrease Spotlight Intensity" << std::endl;
+    std::cout << "T/t: Increase/Decrease Spotlight Focus (Exponent)" << std::endl;
+    std::cout << "PgUp/PgDn: Increase/Decrease Spotlight Angle (Cutoff)" << std::endl;
+    std::cout << "\nESC: Exit" << std::endl;
+    // --- Selesai Tampilan Kontrol ---
 
-    // Set up idle function for continuous animation updates
+
     if (useAnimation) {
         glutIdleFunc([]() { glutPostRedisplay(); });
     }
 
-    // Start main loop
     glutMainLoop();
 
     if (objModel) delete objModel;
@@ -146,70 +172,79 @@ int main(int argc, char** argv) {
 }
 
 void initLighting() {
-    // Enable lighting
     glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0); // 1. Key light
-    glEnable(GL_LIGHT1); // 2. Fill light
-    glEnable(GL_LIGHT2); // 3. Rim light
-    glEnable(GL_LIGHT3); // 4. Point light
+    glEnable(GL_LIGHT0); // Key light
+    glEnable(GL_LIGHT1); // Fill light
+    glEnable(GL_LIGHT2); // Rim light
+    glEnable(GL_LIGHT3); // Point light
+    glEnable(GL_LIGHT4); // Spotlight
+    glEnable(GL_LIGHT5); // Point light 2
 
-    // Disable GL_COLOR_MATERIAL agar material dari MTL berfungsi
     glDisable(GL_COLOR_MATERIAL);
-
-    // Enable two-sided lighting (jika bagian dalam vending machine terlihat)
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
-
-    // --- PENTING: AKTIVASI BLINN-PHONG ---
-    // Ini memberitahu OpenGL untuk menggunakan kalkulasi "Half-Vector"
-    // yang lebih akurat untuk specular (kilapan) berdasarkan posisi viewer.
-    glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
-
-    // --- Set global ambient light ---
-    GLfloat globalAmbient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);
+    glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE); // Blinn-Phong
 
     // --- 1. KEY LIGHT (GL_LIGHT0) ---
-    GLfloat light0_Diffuse[] = { 0.8f, 0.8f, 0.8f, 1.0f };
-    GLfloat light0_Specular[] = { 0.5f, 0.5f, 0.5f, 1.0f };
+    GLfloat light0_Diffuse[] = { 0.6f, 0.6f, 0.7f, 1.0f };
+    GLfloat light0_Specular[] = { 0.4f, 0.4f, 0.5f, 1.0f };
     GLfloat light0_Position[] = { 3.0f, 4.0f, 5.0f, 1.0f };
     glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_Diffuse);
     glLightfv(GL_LIGHT0, GL_SPECULAR, light0_Specular);
     glLightfv(GL_LIGHT0, GL_POSITION, light0_Position);
+    glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 1.0f);
+    glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.05f);
+    glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.01f);
+
 
     // --- 2. FILL LIGHT (GL_LIGHT1) ---
-    GLfloat light1_Diffuse[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+    GLfloat light1_Diffuse[] = { 0.15f, 0.15f, 0.18f, 1.0f };
     GLfloat light1_Specular[] = { 0.0f, 0.0f, 0.0f, 1.0f };
     GLfloat light1_Position[] = { -3.0f, 2.0f, 4.0f, 1.0f };
     glLightfv(GL_LIGHT1, GL_DIFFUSE, light1_Diffuse);
     glLightfv(GL_LIGHT1, GL_SPECULAR, light1_Specular);
     glLightfv(GL_LIGHT1, GL_POSITION, light1_Position);
+    glLightf(GL_LIGHT1, GL_CONSTANT_ATTENUATION, 1.0f);
+    glLightf(GL_LIGHT1, GL_LINEAR_ATTENUATION, 0.1f);
+    glLightf(GL_LIGHT1, GL_QUADRATIC_ATTENUATION, 0.05f);
+
 
     // --- 3. RIM LIGHT (GL_LIGHT2) ---
-    GLfloat light2_Diffuse[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-    GLfloat light2_Specular[] = { 0.1f, 0.1f, 0.1f, 1.0f };
+    GLfloat light2_Diffuse[] = { 0.25f, 0.20f, 0.15f, 1.0f };
+    GLfloat light2_Specular[] = { 0.2f, 0.15f, 0.1f, 1.0f };
     GLfloat light2_Position[] = { 0.0f, 2.0f, -8.0f, 1.0f };
     glLightfv(GL_LIGHT2, GL_DIFFUSE, light2_Diffuse);
     glLightfv(GL_LIGHT2, GL_SPECULAR, light2_Specular);
     glLightfv(GL_LIGHT2, GL_POSITION, light2_Position);
+    glLightf(GL_LIGHT2, GL_CONSTANT_ATTENUATION, 1.0f);
+    glLightf(GL_LIGHT2, GL_LINEAR_ATTENUATION, 0.07f);
+    glLightf(GL_LIGHT2, GL_QUADRATIC_ATTENUATION, 0.03f);
+
 
     // --- 4. POINT LIGHT (GL_LIGHT3) ---
-    GLfloat light3_Diffuse[] = { 1.0f, 0.8f, 0.6f, 1.0f };
+    GLfloat light3_Diffuse[] = { 0.5f, 0.4f, 0.3f, 1.0f };
     GLfloat light3_Specular[] = { 0.0f, 0.0f, 0.0f, 1.0f };
     glLightfv(GL_LIGHT3, GL_DIFFUSE, light3_Diffuse);
     glLightfv(GL_LIGHT3, GL_SPECULAR, light3_Specular);
-    // (Posisi diatur di display() karena interaktif)
+    glLightf(GL_LIGHT3, GL_CONSTANT_ATTENUATION, 0.8f);
+    glLightf(GL_LIGHT3, GL_LINEAR_ATTENUATION, 0.5f);
+    glLightf(GL_LIGHT3, GL_QUADRATIC_ATTENUATION, 0.8f);
 
-    // --- Attenuation (Falloff) untuk LIGHT3 ---
-    GLfloat constant_attenuation = 1.0f;
-    GLfloat linear_attenuation = 0.35f;
-    GLfloat quadratic_attenuation = 0.44f;
-    glLightf(GL_LIGHT3, GL_CONSTANT_ATTENUATION, constant_attenuation);
-    glLightf(GL_LIGHT3, GL_LINEAR_ATTENUATION, linear_attenuation);
-    glLightf(GL_LIGHT3, GL_QUADRATIC_ATTENUATION, quadratic_attenuation);
 
+    // --- 5. SPOT LIGHT (GL_LIGHT4) ---
+    glLightf(GL_LIGHT4, GL_CONSTANT_ATTENUATION, 0.5f);
+    glLightf(GL_LIGHT4, GL_LINEAR_ATTENUATION, 0.1f);
+    glLightf(GL_LIGHT4, GL_QUADRATIC_ATTENUATION, 0.08f);
+
+    // --- 6. POINT LIGHT 2 (GL_LIGHT5) ---
+    GLfloat light5_Diffuse[] = { 0.3f, 0.5f, 1.0f, 1.0f }; // Warna biru redup
+    GLfloat light5_Specular[] = { 0.0f, 0.0f, 0.0f, 1.0f }; // Tanpa specular
+    glLightfv(GL_LIGHT5, GL_DIFFUSE, light5_Diffuse);
+    glLightfv(GL_LIGHT5, GL_SPECULAR, light5_Specular);
+    glLightf(GL_LIGHT5, GL_CONSTANT_ATTENUATION, 0.8f);
+    glLightf(GL_LIGHT5, GL_LINEAR_ATTENUATION, 0.5f);
+    glLightf(GL_LIGHT5, GL_QUADRATIC_ATTENUATION, 0.8f);
 
     // --- Set material properties default ---
-    // Ini akan ditimpa oleh ObjLoader.cpp jika ada file .mtl
     GLfloat matSpecular[] = { 0.7f, 0.7f, 0.7f, 1.0f };
     GLfloat matShininess[] = { 80.0f };
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matSpecular);
@@ -222,22 +257,46 @@ void initLighting() {
 
 void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+    glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+
+    // Update Global Ambient Light
+    GLfloat currentGlobalAmbient[] = { globalAmbientLevel, globalAmbientLevel, globalAmbientLevel, 1.0f };
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, currentGlobalAmbient);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    // Camera position
     glTranslatef(0.0f, 0.0f, zoom);
-
-    // Rotate the model
     glRotatef(angleX, 1.0f, 0.0f, 0.0f);
     glRotatef(angleY, 0.0f, 1.0f, 0.0f);
 
-    // Update posisi LIGHT3 (Point Light) setiap frame
+    // Update posisi LIGHT3 (Point Light)
     glLightfv(GL_LIGHT3, GL_POSITION, light3_Position);
+    // Update posisi LIGHT5 (Point Light 2)
+    glLightfv(GL_LIGHT5, GL_POSITION, light5_Position);
 
-    // Toggle wireframe mode
+    // Update Spotlight (Posisi, Arah, Intensitas, Angle, Exponent)
+    glLightfv(GL_LIGHT4, GL_POSITION, spotLightPosition);
+    glLightfv(GL_LIGHT4, GL_SPOT_DIRECTION, spotLightDirection);
+    glLightf(GL_LIGHT4, GL_SPOT_CUTOFF, spotLightAngle);
+    glLightf(GL_LIGHT4, GL_SPOT_EXPONENT, spotLightExponent);
+
+    GLfloat currentSpotDiffuse[] = {
+        spotLightColor[0] * spotLightIntensity,
+        spotLightColor[1] * spotLightIntensity,
+        spotLightColor[2] * spotLightIntensity,
+        1.0f
+    };
+    GLfloat currentSpotSpecular[] = {
+        spotLightColor[0] * spotLightIntensity * 0.5f,
+        spotLightColor[1] * spotLightIntensity * 0.5f,
+        spotLightColor[2] * spotLightIntensity * 0.5f,
+        1.0f
+    };
+
+    glLightfv(GL_LIGHT4, GL_DIFFUSE, currentSpotDiffuse);
+    glLightfv(GL_LIGHT4, GL_SPECULAR, currentSpotSpecular);
+
     if (showWireframe) {
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     }
@@ -245,7 +304,6 @@ void display() {
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
 
-    // Toggle lighting
     if (enableLighting) {
         glEnable(GL_LIGHTING);
     }
@@ -253,7 +311,7 @@ void display() {
         glDisable(GL_LIGHTING);
     }
 
-    // Draw the model or animation
+    // --- Gambar Model ---
     if (useAnimation && animation && animation->hasFrames()) {
         auto currentTime = std::chrono::high_resolution_clock::now();
         float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
@@ -264,7 +322,7 @@ void display() {
     }
     else if (objModel) {
         if (objModel->hasMaterials()) {
-            objModel->drawWithMaterials(); // Fungsi ini sudah ada di ObjLoader.cpp
+            objModel->drawWithMaterials();
         }
         else {
             glColor3f(0.7f, 0.7f, 0.9f);
@@ -276,23 +334,37 @@ void display() {
         glutSolidCube(1.0);
     }
 
-    // Draw axes for reference (if enabled)
+    // --- BLOK ALAT BANTU (HELPER) ---
+
+    // Matikan pencahayaan SATU KALI untuk semua alat bantu
+    glDisable(GL_LIGHTING);
+
+    // Blok "if (showLightMarker)" DIHAPUS
+
+    // Gambar Sumbu (jika aktif)
     if (showAxis) {
-        glDisable(GL_LIGHTING);
         glBegin(GL_LINES);
+        // Sumbu X (Merah)
         glColor3f(1.0f, 0.0f, 0.0f);
         glVertex3f(0.0f, 0.0f, 0.0f);
         glVertex3f(1.0f, 0.0f, 0.0f);
-
+        // Sumbu Y (Hijau)
         glColor3f(0.0f, 1.0f, 0.0f);
         glVertex3f(0.0f, 0.0f, 0.0f);
         glVertex3f(0.0f, 1.0f, 0.0f);
-
+        // Sumbu Z (Biru)
         glColor3f(0.0f, 0.0f, 1.0f);
         glVertex3f(0.0f, 0.0f, 0.0f);
         glVertex3f(0.0f, 0.0f, 1.0f);
         glEnd();
     }
+
+    // Kembalikan status lighting ke status awal (yang diatur di atas)
+    if (enableLighting) {
+        glEnable(GL_LIGHTING);
+    }
+    // --- SELESAI BLOK ALAT BANTU ---
+
 
     glutSwapBuffers();
 }
@@ -335,7 +407,8 @@ void keyboard(unsigned char key, int x, int y) {
         std::cout << "Axis: " << (showAxis ? "ON" : "OFF") << std::endl;
         break;
 
-        // Kontrol animasi
+        // Case untuk 'b' / 'B' DIHAPUS
+
     case ' ':
         if (useAnimation && animation) {
             if (animation->isAnimationPlaying()) animation->pause();
@@ -348,44 +421,120 @@ void keyboard(unsigned char key, int x, int y) {
     case 'o': case 'O':
         if (useAnimation && animation) animation->stop();
         break;
-    case '+': case '=':
-        if (useAnimation && animation) animation->setFPS(animation->getFPS() + 5.0f);
-        break;
-    case '-': case '_':
+
+    case '[':
         if (useAnimation && animation) {
             float newFPS = animation->getFPS() - 5.0f;
-            if (newFPS > 0) animation->setFPS(newFPS);
+            animation->setFPS(std::max(1.0f, newFPS));
         }
         break;
+    case ']':
+        if (useAnimation && animation) animation->setFPS(animation->getFPS() + 5.0f);
+        break;
 
-        // Kontrol Numpad untuk LIGHT3
-    case '4': // Numpad 4 - Geser Kiri (X-)
+        // --- Kontrol Spotlight Intensity ---
+    case '-':
+    case '_':
+        spotLightIntensity -= 0.1f;
+        if (spotLightIntensity < 0.0f) spotLightIntensity = 0.0f;
+        std::cout << "Spotlight Intensity: " << spotLightIntensity << std::endl;
+        break;
+    case '+':
+    case '=':
+        spotLightIntensity += 0.1f;
+        std::cout << "Spotlight Intensity: " << spotLightIntensity << std::endl;
+        break;
+
+        // --- Kontrol Global Ambient ---
+    case 'm':
+        if (globalAmbientLevel > 0.0f) globalAmbientLevel -= 0.01f;
+        std::cout << "Global Ambient: " << globalAmbientLevel << std::endl;
+        break;
+    case 'M':
+        if (globalAmbientLevel < 1.0f) globalAmbientLevel += 0.01f;
+        std::cout << "Global Ambient: " << globalAmbientLevel << std::endl;
+        break;
+
+        // --- Kontrol Spotlight Exponent ---
+    case 't':
+        if (spotLightExponent > 0.0f) spotLightExponent -= 1.0f;
+        std::cout << "Spotlight Exponent: " << spotLightExponent << std::endl;
+        break;
+    case 'T':
+        if (spotLightExponent < 128.0f) spotLightExponent += 1.0f;
+        std::cout << "Spotlight Exponent: " << spotLightExponent << std::endl;
+        break;
+
+        // --- Kontrol Numpad Point Light (LIGHT3) ---
+    case '4': // Numpad 4
         light3_Position[0] -= 0.2f;
-        std::cout << "Light Pos X: " << light3_Position[0] << std::endl;
+        std::cout << "Light3 Pos X: " << light3_Position[0] << std::endl;
         break;
-    case '6': // Numpad 6 - Geser Kanan (X+)
+    case '6': // Numpad 6
         light3_Position[0] += 0.2f;
-        std::cout << "Light Pos X: " << light3_Position[0] << std::endl;
+        std::cout << "Light3 Pos X: " << light3_Position[0] << std::endl;
         break;
-    case '2': // Numpad 2 - Geser Bawah (Y-)
+    case '2': // Numpad 2
         light3_Position[1] -= 0.2f;
-        std::cout << "Light Pos Y: " << light3_Position[1] << std::endl;
+        std::cout << "Light3 Pos Y: " << light3_Position[1] << std::endl;
         break;
-    case '8': // Numpad 8 - Geser Atas (Y+)
+    case '8': // Numpad 8
         light3_Position[1] += 0.2f;
-        std::cout << "Light Pos Y: " << light3_Position[1] << std::endl;
+        std::cout << "Light3 Pos Y: " << light3_Position[1] << std::endl;
         break;
-    case '7': // Numpad 7 - Geser Maju (Z+)
+    case '7': // Numpad 7
         light3_Position[2] += 0.2f;
-        std::cout << "Light Pos Z: " << light3_Position[2] << std::endl;
+        std::cout << "Light3 Pos Z: " << light3_Position[2] << std::endl;
         break;
-    case '9': // Numpad 9 - Geser Mundur (Z-)
+    case '9': // Numpad 9
         light3_Position[2] -= 0.2f;
-        std::cout << "Light Pos Z: " << light3_Position[2] << std::endl;
+        std::cout << "Light3 Pos Z: " << light3_Position[2] << std::endl;
         break;
     }
     glutPostRedisplay();
 }
+
+void specialKeyboard(int key, int x, int y) {
+    switch (key) {
+        // Kontrol Spotlight Angle
+    case GLUT_KEY_PAGE_UP:
+        if (spotLightAngle < 90.0f) spotLightAngle += 1.0f;
+        std::cout << "Spotlight Angle: " << spotLightAngle << std::endl;
+        break;
+    case GLUT_KEY_PAGE_DOWN:
+        if (spotLightAngle > 0.0f) spotLightAngle -= 1.0f;
+        std::cout << "Spotlight Angle: " << spotLightAngle << std::endl;
+        break;
+
+        // Kontrol Point Light 2 (GL_LIGHT5)
+    case GLUT_KEY_LEFT:
+        light5_Position[0] -= 0.2f;
+        std::cout << "Light5 Pos X: " << light5_Position[0] << std::endl;
+        break;
+    case GLUT_KEY_RIGHT:
+        light5_Position[0] += 0.2f;
+        std::cout << "Light5 Pos X: " << light5_Position[0] << std::endl;
+        break;
+    case GLUT_KEY_DOWN:
+        light5_Position[1] -= 0.2f;
+        std::cout << "Light5 Pos Y: " << light5_Position[1] << std::endl;
+        break;
+    case GLUT_KEY_UP:
+        light5_Position[1] += 0.2f;
+        std::cout << "Light5 Pos Y: " << light5_Position[1] << std::endl;
+        break;
+    case GLUT_KEY_HOME: // Untuk Z+
+        light5_Position[2] += 0.2f;
+        std::cout << "Light5 Pos Z: " << light5_Position[2] << std::endl;
+        break;
+    case GLUT_KEY_END: // Untuk Z-
+        light5_Position[2] -= 0.2f;
+        std::cout << "Light5 Pos Z: " << light5_Position[2] << std::endl;
+        break;
+    }
+    glutPostRedisplay();
+}
+
 
 void mouse(int button, int state, int x, int y) {
     if (button == GLUT_LEFT_BUTTON) {
