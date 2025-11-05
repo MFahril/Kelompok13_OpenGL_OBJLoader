@@ -66,6 +66,17 @@ bool ObjLoader::loadObj(const std::string& filename) {
     std::cout << "  Center: (" << center.x << ", " << center.y << ", " << center.z << ")" << std::endl;
     std::cout << "  Scale: " << scale << std::endl;
     
+    // Check for faces without materials
+    int facesWithoutMaterial = 0;
+    for (const auto& face : faces) {
+        if (face.materialName.empty()) {
+            facesWithoutMaterial++;
+        }
+    }
+    if (facesWithoutMaterial > 0) {
+        std::cout << "  Warning: " << facesWithoutMaterial << " faces without material" << std::endl;
+    }
+    
     return true;
 }
 
@@ -107,12 +118,16 @@ void ObjLoader::parseLine(const std::string& line) {
     else if (prefix == "mtllib") {
         // Material library file
         std::string mtlFile;
-        iss >> mtlFile;
+        // Read the rest of the line to handle filenames with spaces
+        std::getline(iss >> std::ws, mtlFile);
         loadMaterialFile(objDirectory + mtlFile);
     }
     else if (prefix == "usemtl") {
         // Use material
-        iss >> currentMaterial;
+        // Read the rest of the line to handle material names with spaces
+        std::string materialName;
+        std::getline(iss >> std::ws, materialName);
+        currentMaterial = materialName;
     }
 }
 
@@ -373,7 +388,8 @@ void ObjLoader::drawWithMaterials() {
                 glDisable(GL_COLOR_MATERIAL);
                 
                 // Set material properties
-                GLfloat ambient[] = {mat.ambient.x, mat.ambient.y, mat.ambient.z, mat.transparency};
+                // Use diffuse color for ambient (same value as Kd)
+                GLfloat ambient[] = {mat.diffuse.x, mat.diffuse.y, mat.diffuse.z, mat.transparency};
                 GLfloat diffuse[] = {mat.diffuse.x, mat.diffuse.y, mat.diffuse.z, mat.transparency};
                 GLfloat specular[] = {mat.specular.x, mat.specular.y, mat.specular.z, mat.transparency};
                 

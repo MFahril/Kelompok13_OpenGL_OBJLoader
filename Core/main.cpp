@@ -1,9 +1,14 @@
 #include <GL/glut.h>
 #include <iostream>
+#include <chrono>
 #include "ObjLoader.h"
+#include "AnimationLoader.h"
 
 // Global variables
 ObjLoader* objModel = nullptr;
+AnimationLoader* animation = nullptr;
+bool useAnimation = false;
+
 float angleX = 0.0f;
 float angleY = 0.0f;
 float zoom = -5.0f;
@@ -13,6 +18,9 @@ bool isRotating = false;
 bool showWireframe = false;
 bool enableLighting = true;
 bool showAxis = false;
+
+// Time tracking for animation
+auto lastTime = std::chrono::high_resolution_clock::now();
 
 // Function prototypes
 void display();
@@ -43,21 +51,52 @@ int main(int argc, char** argv) {
     // Initialize lighting
     initLighting();
 
-    // Load OBJ file
-    objModel = new ObjLoader();
-    
+    // Check if loading animation or single model
     std::string filename;
     if (argc > 1) {
         filename = argv[1];
     } else {
-        std::cout << "Enter OBJ file path: ";
+        std::cout << "Enter OBJ file path (or animation base path like 'Models/Anim/Allanim'): ";
         std::getline(std::cin, filename);
     }
-
-    if (!objModel->loadObj(filename)) {
-        std::cerr << "Failed to load OBJ file. Using default cube." << std::endl;
-        delete objModel;
-        objModel = nullptr;
+    
+    // Check if this is an animation sequence
+    std::cout << "\nLoad as animation sequence? (y/n): ";
+    char response;
+    std::cin >> response;
+    
+    if (response == 'y' || response == 'Y') {
+        useAnimation = true;
+        animation = new AnimationLoader();
+        
+        int startFrame = 0, endFrame = 20;
+        std::cout << "Start frame (default 0): ";
+        std::cin >> startFrame;
+        std::cout << "End frame (default 20): ";
+        std::cin >> endFrame;
+        
+        float fps = 24.0f;
+        std::cout << "FPS (default 24): ";
+        std::cin >> fps;
+        
+        if (animation->loadAnimationSequence(filename, startFrame, endFrame)) {
+            animation->setFPS(fps);
+            animation->setLoop(true);
+            animation->play();
+        } else {
+            std::cerr << "Failed to load animation sequence." << std::endl;
+            delete animation;
+            animation = nullptr;
+            useAnimation = false;
+        }
+    } else {
+        // Load single OBJ file
+        objModel = new ObjLoader();
+        if (!objModel->loadObj(filename)) {
+            std::cerr << "Failed to load OBJ file. Using default cube." << std::endl;
+            delete objModel;
+            objModel = nullptr;
+        }
     }
 
     std::cout << "\n=== Controls ===" << std::endl;
@@ -66,12 +105,24 @@ int main(int argc, char** argv) {
     std::cout << "L: Toggle lighting" << std::endl;
     std::cout << "F: Toggle wireframe" << std::endl;
     std::cout << "R: Reset view" << std::endl;
+    if (useAnimation) {
+        std::cout << "SPACE: Play/Pause animation" << std::endl;
+        std::cout << "P: Play animation" << std::endl;
+        std::cout << "O: Stop animation" << std::endl;
+        std::cout << "+/-: Increase/Decrease FPS" << std::endl;
+    }
     std::cout << "ESC: Exit" << std::endl;
 
+    // Set up idle function for continuous animation updates
+    if (useAnimation) {
+        glutIdleFunc([]() { glutPostRedisplay(); });
+    }
+    
     // Start main loop
     glutMainLoop();
 
     if (objModel) delete objModel;
+    if (animation) delete animation;
     return 0;
 }
 
@@ -81,12 +132,15 @@ void initLighting() {
     glEnable(GL_LIGHT0);
     // Disable GL_COLOR_MATERIAL so materials from MTL files work properly
     glDisable(GL_COLOR_MATERIAL);
+    
+    // Enable two-sided lighting to fix normal orientation issues
+    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
 
-    // Set light properties - higher ambient to show colors better
-    GLfloat lightAmbient[] = {0.5f, 0.5f, 0.5f, 1.0f};
-    GLfloat lightDiffuse[] = {0.8f, 0.8f, 0.8f, 1.0f};
-    GLfloat lightSpecular[] = {0.5f, 0.5f, 0.5f, 1.0f};
-    GLfloat lightPosition[] = {2.0f, 2.0f, 3.0f, 1.0f};
+    // Set light properties - balanced lighting
+    GLfloat lightAmbient[] = {0.3f, 0.3f, 0.3f, 1.0f};
+    GLfloat lightDiffuse[] = {0.7f, 0.7f, 0.7f, 1.0f};
+    GLfloat lightSpecular[] = {0.3f, 0.3f, 0.3f, 1.0f};
+    GLfloat lightPosition[] = {2.0f, 5.0f, 3.0f, 1.0f};
 
     glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmbient);
     glLightfv(GL_LIGHT0, GL_DIFFUSE, lightDiffuse);
@@ -94,7 +148,7 @@ void initLighting() {
     glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
 
     // Set material properties
-    GLfloat matSpecular[] = {0.5f, 0.5f, 0.5f, 1.0f};
+    GLfloat matSpecular[] = {0.3f, 0.3f, 0.3f, 1.0f};
     GLfloat matShininess[] = {50.0f};
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matSpecular);
     glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, matShininess);
@@ -104,6 +158,9 @@ void initLighting() {
     
     // Disable back-face culling to see all faces
     glDisable(GL_CULL_FACE);
+    
+    // Enable normalization of normals after scaling
+    glEnable(GL_NORMALIZE);
 }
 
 void display() {
@@ -136,8 +193,16 @@ void display() {
         glDisable(GL_LIGHTING);
     }
 
-    // Draw the model
-    if (objModel) {
+    // Draw the model or animation
+    if (useAnimation && animation && animation->hasFrames()) {
+        // Update animation
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
+        lastTime = currentTime;
+        
+        animation->update(deltaTime);
+        animation->drawWithMaterials();
+    } else if (objModel) {
         if (objModel->hasMaterials()) {
             // Draw with materials if available
             objModel->drawWithMaterials();
@@ -220,6 +285,40 @@ void keyboard(unsigned char key, int x, int y) {
         case 'A':
             showAxis = !showAxis;
             std::cout << "Axis: " << (showAxis ? "ON" : "OFF") << std::endl;
+            break;
+        case ' ': // SPACE - Play/Pause animation
+            if (useAnimation && animation) {
+                if (animation->isAnimationPlaying()) {
+                    animation->pause();
+                } else {
+                    animation->play();
+                }
+            }
+            break;
+        case 'p':
+        case 'P': // Play animation
+            if (useAnimation && animation) {
+                animation->play();
+            }
+            break;
+        case 'o':
+        case 'O': // Stop animation
+            if (useAnimation && animation) {
+                animation->stop();
+            }
+            break;
+        case '+':
+        case '=': // Increase FPS
+            if (useAnimation && animation) {
+                animation->setFPS(animation->getFPS() + 5.0f);
+            }
+            break;
+        case '-':
+        case '_': // Decrease FPS
+            if (useAnimation && animation) {
+                float newFPS = animation->getFPS() - 5.0f;
+                if (newFPS > 0) animation->setFPS(newFPS);
+            }
             break;
     }
     glutPostRedisplay();

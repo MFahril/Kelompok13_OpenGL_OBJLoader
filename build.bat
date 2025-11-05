@@ -7,7 +7,7 @@ echo.
 cd /d "%~dp0"
 
 echo Compiling with static libraries (no DLL dependencies)...
-g++ -o ObjViewer.exe Core\main.cpp Core\ObjLoader.cpp -ICore -DFREEGLUT_STATIC -lfreeglut_static -lopengl32 -lglu32 -lwinmm -lgdi32 -static-libgcc -static-libstdc++ -static
+g++ -o ObjViewer.exe Core\main.cpp Core\ObjLoader.cpp Core\AnimationLoader.cpp -ICore -DFREEGLUT_STATIC -lfreeglut_static -lopengl32 -lglu32 -lwinmm -lgdi32 -static-libgcc -static-libstdc++ -static
 
 if %ERRORLEVEL% EQU 0 (
     echo.
