@@ -89,6 +89,19 @@ public:
     int getFaceCount() const { return faces.size(); }
     int getMaterialCount() const { return materials.size(); }
     bool hasMaterials() const { return !materials.empty(); }
+    
+    // Data access for animation (returns const references)
+    const std::vector<Vec3>& getVertices() const { return vertices; }
+    const std::vector<Vec3>& getNormals() const { return normals; }
+    const std::vector<Vec2>& getTexCoords() const { return texCoords; }
+    const std::vector<Face>& getFaces() const { return faces; }
+    const std::map<std::string, Material>& getMaterials() const { return materials; }
+    
+    // Type aliases for AnimationLoader to use
+    typedef Vec3 Vec3;
+    typedef Vec2 Vec2;
+    typedef Face Face;
+    typedef Material Material;
 };
 
 #endif

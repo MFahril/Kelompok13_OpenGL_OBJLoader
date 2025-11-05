@@ -1,6 +1,7 @@
 #include <GL/glut.h>
 #include <iostream>
 #include <chrono>
+#include <cstdlib>
 #include "ObjLoader.h"
 #include "AnimationLoader.h"
 
@@ -54,52 +55,61 @@ int main(int argc, char** argv) {
     // Initialize lighting
     initLighting();
 
-    // ... (Sisa kode loading model tidak berubah) ...
-    std::string filename;
-    if (argc > 1) {
-        filename = argv[1];
+    // Parse command line arguments
+    if (argc < 2) {
+        std::cerr << "Error: No OBJ file specified!" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <objfile> [-a startFrame endFrame fps]" << std::endl;
+        std::cerr << "Example: " << argv[0] << " Models/cube.obj" << std::endl;
+        std::cerr << "Example: " << argv[0] << " Models/Anim/Allanim -a 0 20 24" << std::endl;
+        return 1;
+    }
+
+    std::string filename = argv[1];
+    int startFrame = 0, endFrame = 60;
+    float fps = 30.0f;
+
+    // Check if animation flag is present
+    if (argc > 2 && std::string(argv[2]) == "-a") {
+        useAnimation = true;
+        
+        // Parse animation parameters if provided
+        if (argc > 3) startFrame = std::atoi(argv[3]);
+        if (argc > 4) endFrame = std::atoi(argv[4]);
+        if (argc > 5) fps = std::atof(argv[5]);
+        
+        std::cout << "Loading animation: " << filename << std::endl;
+        std::cout << "  Frames: " << startFrame << " to " << endFrame << std::endl;
+        std::cout << "  FPS: " << fps << std::endl;
     }
     else {
-        std::cout << "Enter OBJ file path (or animation base path like 'Models/Anim/Allanim'): ";
-        std::getline(std::cin, filename);
+        std::cout << "Loading static model: " << filename << std::endl;
     }
 
-    std::cout << "\nLoad as animation sequence? (y/n): ";
-    char response;
-    std::cin >> response;
-
-    if (response == 'y' || response == 'Y') {
-        useAnimation = true;
+    // Load animation or static model
+    if (useAnimation) {
         animation = new AnimationLoader();
-
-        int startFrame = 0, endFrame = 20;
-        std::cout << "Start frame (default 0): ";
-        std::cin >> startFrame;
-        std::cout << "End frame (default 20): ";
-        std::cin >> endFrame;
-
-        float fps = 24.0f;
-        std::cout << "FPS (default 24): ";
-        std::cin >> fps;
 
         if (animation->loadAnimationSequence(filename, startFrame, endFrame)) {
             animation->setFPS(fps);
             animation->setLoop(true);
             animation->play();
+            std::cout << "Animation ready!" << std::endl;
         }
         else {
             std::cerr << "Failed to load animation sequence." << std::endl;
             delete animation;
             animation = nullptr;
             useAnimation = false;
+            return 1;
         }
     }
     else {
         objModel = new ObjLoader();
         if (!objModel->loadObj(filename)) {
-            std::cerr << "Failed to load OBJ file. Using default cube." << std::endl;
+            std::cerr << "Failed to load OBJ file." << std::endl;
             delete objModel;
             objModel = nullptr;
+            return 1;
         }
     }
 

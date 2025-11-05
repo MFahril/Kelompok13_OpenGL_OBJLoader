@@ -4,8 +4,8 @@
 #include <iomanip>
 
 AnimationLoader::AnimationLoader() 
-    : currentFrame(0), totalFrames(0), fps(24.0f), 
-      frameTime(1.0f/24.0f), elapsedTime(0.0f), 
+    : currentFrame(0), totalFrames(0), fps(30.0f), 
+      frameTime(1.0f/30.0f), elapsedTime(0.0f), 
       isPlaying(false), loop(true) {
 }
 
